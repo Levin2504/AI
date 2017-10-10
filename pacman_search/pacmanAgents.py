@@ -63,28 +63,35 @@ class BFSAgent(Agent):
         legal = state.getLegalPacmanActions()
         lastLayerState = [(state.generatePacmanSuccessor(action), action) for action in legal]
         overtime = False
-        extendedNote = []
+
+        for i in lastLayerState:
+            if i[0].isWin():
+                return i[1]
 
         while (True):
-            tempState = []
-            for i in lastLayerState:
+            tempState = []  # current layer nodes, frontier nodes
+            for i in lastLayerState:  # for loop to extend all nodes in last layer and store in current layer
                 legal = i[0].getLegalPacmanActions()
                 for j in legal:
                     nextState = i[0].generatePacmanSuccessor(j)
-                    if nextState is not None:
-                        tempState.append((nextState, i[1]))
+                    if nextState is not None:  # if not timeout
+                        if nextState.isLose():  # if child node is lose state, ignore
+                            continue
+                        elif nextState.isWin():
+                            return i[1]
+                        else:
+                            tempState.append((nextState, i[1]))  # if not, extend it
                     else:
                         overtime = True
                         break
             if overtime:
                 break
             else:
-                extendedNote.extend(tempState)
-                lastLayerState = tempState
+                lastLayerState = tempState  # explored node (only last layer)
 
         scored = []
 
-        for i in extendedNote:
+        for i in lastLayerState:  # when timeout, check nodes in last layer
             scored.append((scoreEvaluation(i[0]), i[1]))
 
         bestScore = max(scored)[0]
@@ -100,42 +107,39 @@ class DFSAgent(Agent):
     # GetAction Function: Called with every frame
     def getAction(self, state):
         # TODO: write DFS Algorithm instead of returning Directions.STOP
-        depth = 17
         legal = state.getLegalPacmanActions()
+        extendedNote = []  # explored node
+        checkingStack = []  # frontier node
         overtime = False
-        extendedNote = []
-        checkingStack = [(state.generatePacmanSuccessor(action),
-                          state.generatePacmanSuccessor(action).getLegalPacmanActions(), action) for action in legal]
+
+        for i in legal:
+            checkingStack.append((state.generatePacmanSuccessor(i), i))
+            # tuple in stack: (state, firststep's direction)
 
         while (True):
-            if not len(checkingStack):
+            if not len(checkingStack):  # if no element in checking stack, go to evaluation
                 break
-            last = len(checkingStack) - 1
-            if last > depth:
-                checkingStack.pop()
-                continue
-            topElement = checkingStack[last]
-            if len(topElement[1]):
-
-                if topElement[0].isWin():
-                    return topElement[2]
-                elif topElement[0].isLose():
-                    checkingStack.pop()
-                    continue
-                newTop = topElement[0].generatePacmanSuccessor(
-                    (topElement[1])[len(topElement[1]) - 1])
-                tempTuple = checkingStack.pop()
-                tempList = tempTuple[1]
-                tempList.pop(int(random.random() * (len(tempList))))
-                checkingStack.append((tempTuple[0], tempList, tempTuple[2]))
-                if newTop is not None:
-                    checkingStack.append((newTop, newTop.getLegalPacmanActions(), topElement[2]))
-                    extendedNote.append((newTop, topElement[2]))
-                else:
+            topElement = checkingStack.pop()  # check the top of the stack
+            legal = topElement[0].getLegalPacmanActions()
+            # extend top element
+            for i in legal:
+                childState = topElement[0].generatePacmanSuccessor(i)
+                if childState is None:
                     overtime = True
                     break
-            else:
-                checkingStack.pop()
+                elif childState.isWin():
+                    # if next state is win, put it into evaluation list but not check its future state
+                    extendedNote.append((childState, topElement[1]))
+                elif not childState.isLose():
+                    # if next state is not lose, put it into checking stack for future
+                    checkingStack.append((childState, topElement[1]))
+                    # if next state is lose, never check it or evaluate it
+            # record for evaluation
+            extendedNote.append(topElement)
+            if overtime:
+                break
+
+        extendedNote.extend(checkingStack)  # for evaluation, count on all known state
 
         scored = []
         for i in extendedNote:
@@ -154,4 +158,53 @@ class AStarAgent(Agent):
     # GetAction Function: Called with every frame
     def getAction(self, state):
         # TODO: write A* Algorithm instead of returning Directions.STOP
-        return Directions.STOP
+        legal = state.getLegalPacmanActions()
+        depthCoefficient = 1  # set a coefficient to modify
+        overtime = False
+        checkingList = []
+
+        for i in legal:
+            childState = state.generatePacmanSuccessor(i)
+            cost = 1 * depthCoefficient - (scoreEvaluation(childState) - scoreEvaluation(state))
+            checkingList.append((state.generatePacmanSuccessor(i), i, cost, 1))
+            # tuple in list: (state, firststep's direction, cost, depth)
+
+        for i in checkingList:
+            if i[0].isWin():
+                return i[1]
+
+        while (True):
+            if not len(checkingList):
+                return Directions.STOP
+            minCost = (checkingList[0])[2]
+            for i in checkingList:
+                if i[2] < minCost:
+                    minCost = i[2]
+            # minCost = min(checkingList)[2]
+            bestNodes = [checkingList.index(i) for i in checkingList if i[2] == minCost]
+            if not len(bestNodes):
+                return
+            choosenNode = checkingList.pop(random.choice(bestNodes))
+            legal = choosenNode[0].getLegalPacmanActions()
+            for i in legal:
+                childState = choosenNode[0].generatePacmanSuccessor(i)
+                if childState is None:
+                    overtime = True
+                    break
+                elif childState.isWin():
+                    return choosenNode[1]
+                elif not childState.isLose():
+                    cost = (1 + choosenNode[3]) * depthCoefficient - \
+                           (scoreEvaluation(childState) - scoreEvaluation(state))
+                    checkingList.append((childState, choosenNode[1], cost, choosenNode[3] + 1))
+                    # if next state is lose, never check it or evaluate it
+            if overtime:
+                break
+
+        # minCost = min(checkingList)[2]
+        minCost = (checkingList[0])[2]
+        for i in checkingList:
+            if i[2] <= minCost:
+                minCost = i[2]
+        bestNodes = [checkingList.index(i) for i in checkingList if i[2] == minCost]
+        return (checkingList[(random.choice(bestNodes))])[1]
